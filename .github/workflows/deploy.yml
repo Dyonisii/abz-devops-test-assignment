@@ -1,0 +1,52 @@
+name: pipeline
+
+on:
+  push:
+    branches:
+      - main  
+  pull_request:
+    branches:
+      - main 
+
+jobs:
+  build:
+    runs-on: linux
+    environment: main
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run build 
+        run: |
+          docker build -f nginx/Dockerfile\
+            --pull \
+            -t nginx:custom \
+            .
+
+          docker build -f wordpress/Dockerfile\
+            --pull \
+            -t wordpress:custom \
+            .
+
+
+      - name: Run deploy 
+        run: |
+
+          mv env.example .env
+          echo "WORDPRESS_DB_HOST=${{ vars.WORDPRESS_DB_HOST }}" >> .env
+          echo "WORDPRESS_DB_NAME=${{ vars.WORDPRESS_DB_NAME }}" >> .env
+          echo "WORDPRESS_DB_USER=${{ vars.WORDPRESS_DB_USER }}" >> .env
+          echo "WORDPRESS_DB_PASSWORD=${{ vars.WORDPRESS_DB_PASSWORD }}" >> .env
+          echo "WP_REDIS_HOST=${{ vars.WP_REDIS_HOST }}" >> .env          
+          cat .env
+
+          sudo docker rm -f nginx || true
+          docker run -d -v /opt/wordpress:/var/www/html  --restart always  --network wp-network --name nginx -p 80:80 -p 443:443 nginx:custom
+
+          sudo docker rm -f wordpress || true
+          docker run -d -v /opt/wordpress:/var/www/html  --env-file .env --restart always  --network wp-network --name wordpress -p 9000:9000 wordpress:custom
+
+          docker container prune -f
+          docker image prune -f
+          docker network prune -f
